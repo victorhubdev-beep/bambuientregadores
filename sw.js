@@ -1,5 +1,5 @@
-const CACHE_NAME = 'bambui-entregadores-v3';
-const APP_FILES = ['./', './index.html', './manifest.json', './icon.svg'];
+const CACHE_NAME = 'bambui-entregadores-v4';
+const APP_FILES = ['./', './index.html', './manifest.json', './icon.svg', './config.js', './supabase-app.js'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_FILES)));
   self.skipWaiting();

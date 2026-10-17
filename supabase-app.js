@@ -4,6 +4,8 @@
     ? window.supabase.createClient(config.url, config.anonKey)
     : null;
   let user = null;
+  let stores = [];
+  let couriers = [];
   window.activeDriver = '';
   document.addEventListener('DOMContentLoaded', () => { window.activeDriver = ''; });
 
@@ -15,19 +17,47 @@
     window.toastTimer = setTimeout(() => { toast.style.display = 'none'; }, 3800);
   }
 
+  const statusFromDatabase = { pending: 'Pendente', in_progress: 'Em andamento', completed: 'Concluída', cancelled: 'Cancelada' };
+  const statusToDatabase = { 'Pendente': 'pending', 'Em andamento': 'in_progress', 'Concluída': 'completed', 'Cancelada': 'cancelled' };
+
+  async function loadOptions() {
+    const [storeResult, profileResult] = await Promise.all([
+      client.from('stores').select('id,name').eq('active', true).order('name'),
+      client.from('profiles').select('*')
+    ]);
+    if (!storeResult.error) stores = storeResult.data || [];
+    if (!profileResult.error) {
+      couriers = (profileResult.data || [])
+        .filter(profile => profile.role === 'courier')
+        .map(profile => ({ id: profile.id, name: profile.full_name || profile.name || profile.display_name || profile.email || 'Entregador' }));
+    }
+    for (const formId of ['quickForm', 'modalForm']) {
+      const form = document.querySelector(`#${formId}`);
+      const storeSelect = form.elements.store;
+      const riderSelect = form.elements.rider;
+      storeSelect.replaceChildren(new Option('Loja não definida', ''));
+      stores.forEach(store => storeSelect.add(new Option(store.name, store.id)));
+      riderSelect.replaceChildren(new Option('Atribuir depois', ''));
+      couriers.forEach(courier => riderSelect.add(new Option(courier.name, courier.id)));
+    }
+  }
+
   async function loadDeliveries() {
     if (!client || !user) return;
+    await loadOptions();
     const { data, error } = await client.from('deliveries')
-      .select('id,client,address,store,rider,status,created_at')
+      .select('id,order_code,customer_name,delivery_address,notes,status,store_id,courier_id,created_at')
       .order('created_at', { ascending: false });
     if (error) {
       console.error(error);
-      notifyUser('Falha ao carregar pedidos. Confira a tabela e as políticas RLS.');
+      notifyUser(`Falha ao carregar pedidos: ${error.message}`);
       return;
     }
     const deliveries = data.map(row => ({
-      dbId: row.id, id: row.id, client: row.client, address: row.address,
-      store: row.store, rider: row.rider, status: row.status
+      dbId: row.id, id: row.order_code, client: row.customer_name, address: row.delivery_address,
+      store: stores.find(store => store.id === row.store_id)?.name || 'Loja não definida',
+      storeId: row.store_id, rider: couriers.find(courier => courier.id === row.courier_id)?.name || 'Atribuir depois',
+      courierId: row.courier_id, notes: row.notes, status: statusFromDatabase[row.status] || row.status
     }));
     window.deliveries.splice(0, window.deliveries.length, ...deliveries);
     window.render();
@@ -35,19 +65,25 @@
 
   async function saveDelivery(delivery) {
     const values = {
-      client: delivery.client, address: delivery.address, store: delivery.store,
-      rider: delivery.rider, status: delivery.status
+      order_code: delivery.orderCode || `BAM-${Date.now()}`,
+      customer_name: delivery.client,
+      delivery_address: delivery.address,
+      notes: delivery.notes || '',
+      status: statusToDatabase[delivery.status] || 'pending',
+      store_id: delivery.storeId || null,
+      courier_id: delivery.courierId || null
     };
     const request = delivery.dbId
       ? client.from('deliveries').update(values).eq('id', delivery.dbId)
-      : client.from('deliveries').insert({ ...values, created_by: user.id }).select('id').single();
+      : client.from('deliveries').insert({ ...values, created_by: user.id }).select('id,order_code').single();
     const { data, error } = await request;
     if (error) {
       console.error(error);
-      notifyUser('Falha ao salvar no banco. Confira a tabela e as políticas RLS.');
+      notifyUser(`Falha ao salvar pedido: ${error.message}`);
       return false;
     }
     if (data && data.id) delivery.dbId = data.id;
+    if (data && data.order_code) delivery.id = data.order_code;
     return true;
   }
 
@@ -116,8 +152,12 @@
         const formData = new FormData(form);
         const delivery = {
           id: `temp-${Date.now()}`, client: formData.get('client').trim(),
-          address: formData.get('address').trim(), store: formData.get('store'),
-          rider: formData.get('rider'), status: 'Pendente'
+          orderCode: `BAM-${Date.now()}`, address: formData.get('address').trim(),
+          storeId: formData.get('store') || null,
+          store: stores.find(store => store.id === formData.get('store'))?.name || 'Loja não definida',
+          courierId: formData.get('rider') || null,
+          rider: couriers.find(courier => courier.id === formData.get('rider'))?.name || 'Atribuir depois',
+          status: 'Pendente', notes: ''
         };
         if (!delivery.client || !delivery.address) return;
         if (!(await saveDelivery(delivery))) return;
