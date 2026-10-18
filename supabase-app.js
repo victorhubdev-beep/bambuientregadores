@@ -1,5 +1,6 @@
 (() => {
   const config = window.BAMBUI_SUPABASE || {};
+  let authFlowType = new URLSearchParams(window.location.hash.slice(1)).get('type') || new URLSearchParams(window.location.search).get('type');
   const client = window.supabase && config.url && config.anonKey
     ? window.supabase.createClient(config.url, config.anonKey)
     : null;
@@ -7,6 +8,7 @@
   let currentProfile = null;
   let stores = [];
   let couriers = [];
+  let passwordSetupShown = false;
   window.activeDriver = '';
   document.addEventListener('DOMContentLoaded', () => { window.activeDriver = ''; });
 
@@ -40,6 +42,54 @@
 
   async function fetchProfile(userId) {
     return client.from('profiles').select('id,full_name,role,active').eq('id', userId).maybeSingle();
+  }
+
+  function showPasswordSetup() {
+    if (passwordSetupShown || !client) return;
+    passwordSetupShown = true;
+    const overlay = document.createElement('div');
+    overlay.id = 'passwordSetupOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:#101720b8;display:grid;place-items:center;padding:18px;';
+    overlay.innerHTML = '<section style="width:min(100%,430px);background:white;border-radius:14px;padding:24px;box-shadow:0 18px 60px #0004;color:#18212e"><p style="margin:0 0 6px;color:#ed1025;font-size:11px;font-weight:800;letter-spacing:1.3px">BAMBUÍ ENTREGADORES</p><h2 style="margin:0 0 8px">Crie sua senha</h2><p style="margin:0 0 18px;color:#778293">Defina uma senha para concluir seu acesso ao aplicativo.</p><form id="passwordSetupForm" style="display:grid;gap:12px"><label style="font-size:12px;font-weight:700">Nova senha<input name="password" type="password" minlength="8" autocomplete="new-password" required style="display:block;width:100%;margin-top:5px;padding:11px;border:1px solid #dfe5ec;border-radius:8px"></label><label style="font-size:12px;font-weight:700">Confirme a senha<input name="confirmation" type="password" minlength="8" autocomplete="new-password" required style="display:block;width:100%;margin-top:5px;padding:11px;border:1px solid #dfe5ec;border-radius:8px"></label><p id="passwordSetupMessage" style="display:none;margin:0;color:#c90b1c;font-size:12px"></p><button type="submit" style="border:0;border-radius:8px;padding:12px;background:#ed1025;color:white;font-weight:800;cursor:pointer">Salvar senha</button><button id="passwordSetupLogout" type="button" style="border:1px solid #e5e9ef;border-radius:8px;padding:10px;background:white;color:#3d4857;font-weight:700;cursor:pointer">Sair</button></form></section>';
+    document.body.append(overlay);
+    const form = overlay.querySelector('#passwordSetupForm');
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const values = new FormData(form);
+      const password = values.get('password');
+      const message = overlay.querySelector('#passwordSetupMessage');
+      if (password !== values.get('confirmation')) {
+        message.textContent = 'As senhas não coincidem.';
+        message.style.display = 'block';
+        return;
+      }
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      button.textContent = 'Salvando...';
+      const { error } = await client.auth.updateUser({ password });
+      if (error) {
+        button.disabled = false;
+        button.textContent = 'Salvar senha';
+        message.textContent = `Não foi possível salvar a senha: ${error.message}`;
+        message.style.display = 'block';
+        return;
+      }
+      authFlowType = null;
+      window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`);
+      overlay.remove();
+      passwordSetupShown = false;
+      const profileResult = await fetchProfile(user.id);
+      currentProfile = profileResult.error ? null : profileResult.data;
+      notifyUser('Senha criada. Acesso ao aplicativo concluído.');
+      if (currentProfile?.active) await loadDeliveries();
+    });
+    overlay.querySelector('#passwordSetupLogout').addEventListener('click', async () => {
+      await client.auth.signOut();
+      authFlowType = null;
+      window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`);
+      overlay.remove();
+      passwordSetupShown = false;
+    });
   }
 
   const statusFromDatabase = { pending: 'Pendente', in_progress: 'Em andamento', completed: 'Concluída', cancelled: 'Cancelada' };
@@ -258,6 +308,10 @@
           else console.error(result.error);
         }
         authState.textContent = user ? `Conectado: ${user.email}` : 'Desconectado. Use uma conta criada no Supabase Auth.';
+        if (user && ['invite', 'recovery'].includes(authFlowType)) {
+          showPasswordSetup();
+          return;
+        }
         if (user && currentProfile?.active) await loadDeliveries();
         else if (!user) {
           stores = [];
@@ -266,8 +320,12 @@
           window.render();
         }
       };
-      client.auth.getSession().then(({ data }) => syncSession(data.session));
-      client.auth.onAuthStateChange((_event, session) => {
+      client.auth.getSession().then(({ data }) => {
+        if (!data.session) authFlowType = null;
+        syncSession(data.session);
+      });
+      client.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_OUT') authFlowType = null;
         setTimeout(() => syncSession(session), 0);
       });
     }
