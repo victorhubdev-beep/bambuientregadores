@@ -346,24 +346,47 @@
     if (driverDescription) driverDescription.textContent = 'Entre com o e-mail e a senha definidos no convite do Supabase.';
     const driverForm = document.querySelector('#driverLoginForm');
     driverForm.innerHTML = '<div class="field"><label for="courierEmail">E-mail</label><input id="courierEmail" name="email" type="email" autocomplete="username" required placeholder="motoboy@exemplo.com"></div><div class="field"><label for="courierPassword">Senha</label><input id="courierPassword" name="password" type="password" autocomplete="current-password" required placeholder="Sua senha do Supabase"></div><button class="btn btn-primary">Entrar</button>';
+    const loginMessage = document.createElement('p');
+    loginMessage.className = 'driver-login-message';
+    loginMessage.setAttribute('role', 'status');
+    loginMessage.setAttribute('aria-live', 'polite');
+    loginMessage.style.cssText = 'display:none;margin:12px 0 0;padding:11px 12px;border-radius:10px;background:#fff0f1;color:#b20b1d;font-size:13px;line-height:1.45;';
+    driverForm.append(loginMessage);
     const demoWarning = driverLogin.querySelector('p[style]');
     if (demoWarning) demoWarning.remove();
     driverForm.addEventListener('submit', async event => {
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (!client) return notifyUser('A conexão segura do aplicativo não está configurada.');
-      const form = new FormData(driverForm);
-      const { data, error } = await client.auth.signInWithPassword({ email: form.get('email'), password: form.get('password') });
-      if (error) return notifyUser('Não foi possível entrar. Confira o e-mail e a senha definidos após aceitar o convite.');
-      const result = await fetchProfile(data.user.id);
-      if (result.error || !result.data || result.data.role !== 'courier' || !result.data.active) {
-        await client.auth.signOut();
-        return notifyUser('Esta conta não está cadastrada como motoboy ativo.');
+      if (!client) {
+        loginMessage.textContent = 'A conexão segura do aplicativo não está configurada.';
+        loginMessage.style.display = 'block';
+        return;
       }
-      user = data.user;
-      currentProfile = result.data;
-      await loadDeliveries();
-      window.driverLogin(result.data.full_name || 'Entregador');
+      const form = new FormData(driverForm);
+      const submitButton = driverForm.querySelector('button[type="submit"]');
+      submitButton.disabled = true;
+      submitButton.textContent = 'Entrando...';
+      loginMessage.style.display = 'none';
+      try {
+        const { data, error } = await client.auth.signInWithPassword({ email: form.get('email'), password: form.get('password') });
+        if (error) throw new Error(error.message);
+        const result = await fetchProfile(data.user.id);
+        if (result.error) throw new Error(`Falha ao consultar o perfil: ${result.error.message}`);
+        if (!result.data || result.data.role !== 'courier' || !result.data.active) {
+          await client.auth.signOut();
+          throw new Error('A conta entrou, mas ainda não tem perfil ativo de entregador. Confira o UID em Authentication → Users e a linha em public.profiles.');
+        }
+        user = data.user;
+        currentProfile = result.data;
+        await loadDeliveries();
+        window.driverLogin(result.data.full_name || 'Entregador');
+      } catch (error) {
+        console.error('Falha no login do entregador:', error);
+        loginMessage.textContent = `Não foi possível entrar: ${error.message || 'falha de conexão com o Supabase.'}`;
+        loginMessage.style.display = 'block';
+        submitButton.disabled = false;
+        submitButton.textContent = 'Entrar';
+      }
     }, true);
 
     window.openDriverApp = () => {
