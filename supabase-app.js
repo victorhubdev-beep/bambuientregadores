@@ -345,7 +345,7 @@
     const driverDescription = driverLogin.querySelector('p.sub');
     if (driverDescription) driverDescription.textContent = 'Entre com o e-mail e a senha definidos no convite do Supabase.';
     const driverForm = document.querySelector('#driverLoginForm');
-    driverForm.innerHTML = '<div class="field"><label for="courierEmail">E-mail</label><input id="courierEmail" name="email" type="email" autocomplete="username" required placeholder="motoboy@exemplo.com"></div><div class="field"><label for="courierPassword">Senha</label><input id="courierPassword" name="password" type="password" autocomplete="current-password" required placeholder="Sua senha do Supabase"></div><button class="btn btn-primary">Entrar</button>';
+    driverForm.innerHTML = '<div class="field"><label for="courierEmail">E-mail</label><input id="courierEmail" name="email" type="email" autocomplete="username" required placeholder="motoboy@exemplo.com"></div><div class="field"><label for="courierPassword">Senha</label><input id="courierPassword" name="password" type="password" autocomplete="current-password" required placeholder="Sua senha do Supabase"></div><button type="submit" class="btn btn-primary">Entrar</button>';
     const loginMessage = document.createElement('p');
     loginMessage.className = 'driver-login-message';
     loginMessage.setAttribute('role', 'status');
