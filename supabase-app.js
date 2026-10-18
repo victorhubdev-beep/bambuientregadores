@@ -260,6 +260,49 @@
   }
 
     window.addEventListener('DOMContentLoaded', () => {
+    const courierMode = new URLSearchParams(window.location.search).get('modo') === 'entregador';
+    if (courierMode) document.body.classList.add('courier-mode');
+    const courierTheme = document.createElement('style');
+    courierTheme.textContent = `
+      .courier-mode .shell{display:none!important}
+      .courier-mode .driver-overlay{display:block!important;min-height:100vh}
+      .driver-overlay{background:#f5f6f8;color:#20242c}
+      .driver-top{position:sticky;top:0;z-index:3;background:#fff;color:#20242c;border-bottom:1px solid #eceef1;box-shadow:0 2px 10px #18212e0b;padding:12px max(16px,calc((100vw - 600px)/2))}
+      .driver-top .brand{padding:0}.driver-top .brand-icon{border-radius:14px}.driver-top .brand small{color:#ed1025}
+      .driver-top .btn-light{border-radius:999px;padding:9px 12px}
+      .driver-wrap{max-width:600px;padding:18px 14px 90px}
+      .driver-hero{position:relative;overflow:hidden;border-radius:22px;padding:22px;background:linear-gradient(135deg,#ed1025 0%,#c50c21 60%,#a5091c 100%);box-shadow:0 12px 28px #c50c212e}
+      .driver-hero:after{content:'🏍';position:absolute;right:18px;bottom:-18px;font-size:92px;opacity:.12;transform:rotate(-12deg)}
+      .driver-hero .driver-badge{position:relative;z-index:1;background:#ffffff25;color:#fff}
+      .driver-hero h2{position:relative;z-index:1;font-size:26px;letter-spacing:-.5px}
+      .driver-hero p{position:relative;z-index:1;max-width:360px}
+      #driverHome>.metrics{gap:9px;margin:0 0 20px}
+      #driverHome>.metrics .metric{border:0;border-radius:16px;padding:13px;box-shadow:0 4px 14px #18212e0b}
+      #driverHome>.metrics .metric strong{font-size:26px}
+      #driverHome>div[style*="justify-content:space-between"]{margin:20px 0 10px}
+      #driverHome>div[style*="justify-content:space-between"] h2{font-size:18px;margin:0}
+      .driver-card{border:0;border-radius:18px;padding:17px;margin:11px 0;box-shadow:0 5px 18px #18212e0d}
+      .driver-card h3{font-size:17px;margin:13px 0 8px}
+      .driver-card p{font-size:13px;line-height:1.55}
+      .driver-badge{letter-spacing:.2px}
+      .driver-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+      .driver-actions .btn{min-height:46px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;border-radius:11px}
+      .driver-login{margin:clamp(28px,9vh,76px) auto 20px;border:0;border-radius:22px;padding:22px;box-shadow:0 8px 28px #18212e0d}
+      .driver-login h2{font-size:23px;letter-spacing:-.4px}
+      .driver-login .form{padding:12px 0 0}
+      .driver-login .btn-primary{min-height:48px;border-radius:11px}
+      @media(max-width:680px){.driver-top{padding:11px 12px}.driver-top .brand-icon{width:39px;height:39px}.driver-top .brand strong{font-size:15px}.driver-top .btn-light{font-size:0;width:40px;height:40px;padding:0;display:grid;place-items:center}.driver-wrap{padding:14px 12px 82px}.driver-login{margin:30px auto 18px;padding:19px}.driver-actions{grid-template-columns:1fr}.driver-hero{padding:20px}.driver-hero h2{font-size:24px}#driverHome>.metrics{grid-template-columns:repeat(3,minmax(0,1fr))!important}}
+    `;
+    document.head.append(courierTheme);
+    const driverOverlay = document.querySelector('#driverOverlay');
+    if (courierMode) {
+      driverOverlay.style.display = 'block';
+      const homeButton = driverOverlay.querySelector('.driver-top .btn-light');
+      if (homeButton) {
+        homeButton.textContent = '← Início';
+        homeButton.onclick = () => { window.location.href = '/'; };
+      }
+    }
     const originalRender = window.render;
     window.render = () => {
       originalRender();
@@ -334,6 +377,7 @@
       document.querySelector('#driverLogin').style.display = 'none';
       document.querySelector('#driverHome').style.display = 'block';
       document.querySelector('#driverGreeting').textContent = `Olá, ${name}!`;
+      document.querySelector('#driverHome .driver-badge').textContent = 'ÁREA DO ENTREGADOR';
       window.renderDriverDeliveries();
     };
     window.renderDriverDeliveries = () => {
@@ -376,7 +420,10 @@
           showPasswordSetup();
           return;
         }
-        if (user && currentProfile?.active) await loadDeliveries();
+        if (user && currentProfile?.active) {
+          await loadDeliveries();
+          if (courierMode && currentProfile.role === 'courier') window.driverLogin(currentProfile.full_name || 'Entregador');
+        }
         else if (!user) {
           stores = [];
           couriers = [];
@@ -458,6 +505,7 @@
       document.querySelector('#driverLogin').style.display = 'none';
       document.querySelector('#driverHome').style.display = 'block';
       document.querySelector('#driverGreeting').textContent = `Olá, ${name}!`;
+      document.querySelector('#driverHome .driver-badge').textContent = 'ÁREA DO ENTREGADOR';
       window.renderDriverDeliveries();
     };
   });
