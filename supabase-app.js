@@ -208,6 +208,30 @@
     return true;
   }
 
+  async function assignCourier(id) {
+    if (!signedIn()) return;
+    const delivery = window.deliveries.find(row => String(row.id) === String(id));
+    if (!delivery) return;
+    if (!couriers.length) return notifyUser('Nenhum entregador ativo para atribuir.');
+    const choices = ['0 - Atribuir depois', ...couriers.map((courier, index) => `${index + 1} - ${courier.name}`)].join('\n');
+    const selected = window.prompt(`Escolha o número do entregador:\n${choices}`, delivery.courierId ? String(couriers.findIndex(courier => courier.id === delivery.courierId) + 1) : '0');
+    if (selected === null) return;
+    const choice = Number(selected);
+    if (!Number.isInteger(choice) || choice < 0 || choice > couriers.length) return notifyUser('Opção inválida.');
+    const courier = choice === 0 ? null : couriers[choice - 1];
+    const previousCourierId = delivery.courierId;
+    const previousRider = delivery.rider;
+    delivery.courierId = courier?.id || null;
+    delivery.rider = courier?.name || 'Atribuir depois';
+    if (!(await saveDelivery(delivery))) {
+      delivery.courierId = previousCourierId;
+      delivery.rider = previousRider;
+      return;
+    }
+    window.render();
+    notifyUser(courier ? `Entrega atribuída a ${courier.name}.` : 'Entrega ficou sem entregador.');
+  }
+
   async function updateDelivery(id, newStatus) {
     if (!user || !currentProfile?.active || !['admin', 'courier'].includes(currentProfile.role)) {
       notifyUser('Entre com uma conta ativa para atualizar esta entrega.');
@@ -228,10 +252,33 @@
       originalRender();
       renderStoresPage();
       renderCouriersPage();
+      for (const selector of ['#deliveryRows', '#allDeliveryRows']) {
+        const body = document.querySelector(selector);
+        if (!body) continue;
+        const rows = Array.from(body.rows);
+        const deliveries = window.deliveries.slice().reverse();
+        rows.forEach((row, index) => {
+          const delivery = deliveries[index];
+          const actions = row.cells[row.cells.length - 1];
+          if (!delivery || !actions || actions.querySelector('[data-assign-delivery]')) return;
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'mini-btn';
+          button.dataset.assignDelivery = delivery.id;
+          button.textContent = delivery.courierId ? 'Trocar entregador' : 'Atribuir entregador';
+          button.style.marginLeft = '6px';
+          actions.append(button);
+        });
+      }
     };
     const courierHeading = document.querySelector('#page-motoboys .panel-head p');
     if (courierHeading) courierHeading.textContent = 'Entregadores com acesso ativo ao aplicativo.';
     window.addStore = addStore;
+    window.assignCourier = assignCourier;
+    document.addEventListener('click', event => {
+      const button = event.target.closest('[data-assign-delivery]');
+      if (button) assignCourier(button.dataset.assignDelivery);
+    });
     window.addRider = () => notifyUser('Convide o entregador pelo Supabase Auth para criar um acesso seguro.');
 
     const driverLogin = document.querySelector('#driverLogin');
@@ -279,7 +326,7 @@
       document.querySelector('#driverMoving').textContent = mine.filter(delivery => delivery.status === 'Em andamento').length;
       document.querySelector('#driverDone').textContent = mine.filter(delivery => delivery.status === 'Concluída').length;
       document.querySelector('#driverDeliveries').innerHTML = mine.length
-        ? mine.slice().reverse().map(delivery => `<article class="driver-card"><div style="display:flex;justify-content:space-between;gap:8px"><span class="driver-badge">Pedido #${escapeHtml(delivery.id)}</span><span class="status">${escapeHtml(delivery.status)}</span></div><h3>${escapeHtml(delivery.client)}</h3><p>📍 ${escapeHtml(delivery.address)}</p><p>🏪 ${escapeHtml(delivery.store)}</p><div class="driver-actions"><button class="btn btn-primary" onclick="driverAdvance(${JSON.stringify(delivery.id)})" ${delivery.status === 'Concluída' ? 'disabled' : ''}>${delivery.status === 'Pendente' ? 'Iniciar entrega' : delivery.status === 'Em andamento' ? 'Confirmar entrega' : 'Concluída'}</button></div></article>`).join('')
+        ? mine.slice().reverse().map(delivery => `<article class="driver-card"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span class="driver-badge">Pedido #${escapeHtml(delivery.id)}</span><span class="status ${delivery.status === 'Concluída' ? 'done' : delivery.status === 'Em andamento' ? 'moving' : 'pending'}">${escapeHtml(delivery.status)}</span></div><h3>${escapeHtml(delivery.client)}</h3><p>📍 ${escapeHtml(delivery.address)}</p><p>🏪 ${escapeHtml(delivery.store)}</p><div class="driver-actions"><a class="btn btn-light" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(delivery.address)}" target="_blank" rel="noopener noreferrer">Abrir rota</a><button class="btn btn-primary" onclick="driverAdvance(${JSON.stringify(delivery.id)})" ${delivery.status === 'Concluída' ? 'disabled' : ''}>${delivery.status === 'Pendente' ? 'Iniciar entrega' : delivery.status === 'Em andamento' ? 'Confirmar entrega' : 'Concluída'}</button></div></article>`).join('')
         : '<div class="driver-card"><h3>Nenhuma entrega atribuída</h3><p>Peça ao administrador para atribuir um pedido ao seu nome no painel.</p></div>';
     };
     window.driverLogout = async () => {
