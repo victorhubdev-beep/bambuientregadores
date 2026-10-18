@@ -213,23 +213,36 @@
     const delivery = window.deliveries.find(row => String(row.id) === String(id));
     if (!delivery) return;
     if (!couriers.length) return notifyUser('Nenhum entregador ativo para atribuir.');
-    const choices = ['0 - Atribuir depois', ...couriers.map((courier, index) => `${index + 1} - ${courier.name}`)].join('\n');
-    const selected = window.prompt(`Escolha o número do entregador:\n${choices}`, delivery.courierId ? String(couriers.findIndex(courier => courier.id === delivery.courierId) + 1) : '0');
-    if (selected === null) return;
-    const choice = Number(selected);
-    if (!Number.isInteger(choice) || choice < 0 || choice > couriers.length) return notifyUser('Opção inválida.');
-    const courier = choice === 0 ? null : couriers[choice - 1];
-    const previousCourierId = delivery.courierId;
-    const previousRider = delivery.rider;
-    delivery.courierId = courier?.id || null;
-    delivery.rider = courier?.name || 'Atribuir depois';
-    if (!(await saveDelivery(delivery))) {
-      delivery.courierId = previousCourierId;
-      delivery.rider = previousRider;
-      return;
-    }
-    window.render();
-    notifyUser(courier ? `Entrega atribuída a ${courier.name}.` : 'Entrega ficou sem entregador.');
+    document.querySelector('#assignCourierOverlay')?.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'assignCourierOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#101720b8;display:grid;place-items:center;padding:18px;';
+    overlay.innerHTML = `<section role="dialog" aria-modal="true" aria-labelledby="assignCourierTitle" style="width:min(100%,420px);background:white;border-radius:14px;padding:22px;box-shadow:0 18px 60px #0004;color:#18212e"><p style="margin:0 0 6px;color:#ed1025;font-size:11px;font-weight:800;letter-spacing:1.2px">ATRIBUIR ENTREGA</p><h2 id="assignCourierTitle" style="margin:0 0 6px">Pedido #${escapeHtml(delivery.id)}</h2><p style="margin:0 0 16px;color:#778293">Escolha quem fará esta entrega.</p><form id="assignCourierForm" style="display:grid;gap:12px"><label for="assignCourierSelect" style="font-size:12px;font-weight:700">Entregador</label><select id="assignCourierSelect" required style="width:100%;padding:11px;border:1px solid #dfe5ec;border-radius:8px"><option value="">Atribuir depois</option>${couriers.map(courier => `<option value="${escapeHtml(courier.id)}" ${courier.id === delivery.courierId ? 'selected' : ''}>${escapeHtml(courier.name)}</option>`).join('')}</select><p id="assignCourierMessage" style="display:none;margin:0;color:#c90b1c;font-size:12px"></p><div style="display:flex;gap:8px"><button type="button" id="assignCourierCancel" class="btn btn-light" style="flex:1">Cancelar</button><button type="submit" class="btn btn-primary" style="flex:1">Salvar atribuição</button></div></form></section>`;
+    document.body.append(overlay);
+    const form = overlay.querySelector('#assignCourierForm');
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const selectedId = overlay.querySelector('#assignCourierSelect').value;
+      const courier = couriers.find(item => item.id === selectedId) || null;
+      const previousCourierId = delivery.courierId;
+      const previousRider = delivery.rider;
+      delivery.courierId = courier?.id || null;
+      delivery.rider = courier?.name || 'Atribuir depois';
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      button.textContent = 'Salvando...';
+      if (!(await saveDelivery(delivery))) {
+        delivery.courierId = previousCourierId;
+        delivery.rider = previousRider;
+        button.disabled = false;
+        button.textContent = 'Salvar atribuição';
+        return;
+      }
+      overlay.remove();
+      window.render();
+      notifyUser(courier ? `Entrega atribuída a ${courier.name}.` : 'Entrega ficou sem entregador.');
+    });
+    overlay.querySelector('#assignCourierCancel').addEventListener('click', () => overlay.remove());
   }
 
   async function updateDelivery(id, newStatus) {
@@ -277,7 +290,11 @@
     window.assignCourier = assignCourier;
     document.addEventListener('click', event => {
       const button = event.target.closest('[data-assign-delivery]');
-      if (button) assignCourier(button.dataset.assignDelivery);
+      if (button) {
+        event.preventDefault();
+        event.stopPropagation();
+        assignCourier(button.dataset.assignDelivery);
+      }
     });
     window.addRider = () => notifyUser('Convide o entregador pelo Supabase Auth para criar um acesso seguro.');
 
